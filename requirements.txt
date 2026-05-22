@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+httpx
+pydantic
+pydantic-settings
+vaderSentiment
+nltk
+scikit-learn
+pandas
+matplotlib
+python-multipart
+pytest
+pytest-asyncio

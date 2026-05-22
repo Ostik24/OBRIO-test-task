@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+.pytest_cache/
+
+# Venv
+venv/
+.venv/
+env/
+
+# Env files
+.env
+.env.local
+
+# Reports / generated
+reports/*.png
+reports/*.html
+!reports/.gitkeep
