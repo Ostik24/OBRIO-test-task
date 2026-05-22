@@ -10,3 +10,4 @@ class Review(BaseModel):
     version: str = ""
     updated: datetime
     cleaned_content: str = ""
+    sentiment: str = ""

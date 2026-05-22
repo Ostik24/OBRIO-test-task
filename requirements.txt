@@ -11,3 +11,6 @@ matplotlib
 python-multipart
 pytest
 pytest-asyncio
+sentence-transformers
+anthropic
+python-dotenv

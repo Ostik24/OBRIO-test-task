@@ -16,15 +16,27 @@ def rating_distribution(reviews: list[Review]) -> dict:
         "percent": round(counts[j] / total * 100, 1) if total else 0.0,
     } for j in range(1, 6)}
 
+def sentiment_distribution(reviews: list[Review]) -> dict:
+    """Counts + percentages of positive/negative/neutral."""
+    counts = {s: sum(1 for r in reviews if r.sentiment == s) for s in ["positive", "negative", "neutral"]}
+    total = total_reviews(reviews)
+    return {s: {
+        "count": counts[s],
+        "percent": round(counts[s] / total * 100, 1) if total else 0.0,
+    } for s in ["positive", "negative", "neutral"]}
+
 def compute_metrics(reviews: list[Review]) -> dict:
     return {
         "total_reviews": total_reviews(reviews),
         "average_rating": average_rating(reviews),
         "rating_distribution": rating_distribution(reviews),
+        "sentiment_distribution": sentiment_distribution(reviews),
     }
 
 if __name__ == "__main__":
     from app.services.apple_reviews import fetch_reviews
-    reviews = fetch_reviews("547702041", limit=100)
-    print(compute_metrics(reviews))
-
+    from app.services.sentiment import annotate
+    reviews_test = fetch_reviews("547702041", limit=100)
+    annotate(reviews_test)
+    from pprint import pprint
+    pprint(compute_metrics(reviews_test))
