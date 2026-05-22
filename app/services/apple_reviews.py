@@ -1,4 +1,7 @@
 from math import ceil
+from pydantic import ValidationError
+from app.models.review import Review
+from app.services.text_cleaning import clean_review_text
 import requests
 
 class AppleReviewsError(Exception):
@@ -8,7 +11,7 @@ class AppNotFoundError(AppleReviewsError):
     """ID of the app doesn't exist or has no reviews."""
 
 
-def fetch_reviews(app_id: str, country: str = "us", limit: int = 100) -> list[dict]:
+def fetch_reviews(app_id: str, country: str = "us", limit: int = 100) -> list[Review]:
     if not app_id.isdigit():
         raise ValueError("ID of the app must be numeric")
     if len(country) != 2 or not country.isalpha():
@@ -55,18 +58,26 @@ def fetch_reviews(app_id: str, country: str = "us", limit: int = 100) -> list[di
                 continue
             seen.add(rev_id)
 
-            reviews.append({
-                "author": entry.get("author", {}).get("name", {}).get("label", ""),
-                "title": entry.get("title", {}).get("label", ""),
-                "content": entry.get("content", {}).get("label", ""),
-                "rating": rating,
-                "version": entry.get("im:version", {}).get("label", ""),
-                "updated": entry.get("updated", {}).get("label", ""),
-            })
+            try:
+                reviews.append(Review(
+                    id=rev_id,
+                    author=entry.get("author", {}).get("name", {}).get("label", ""),
+                    title=entry.get("title", {}).get("label", ""),
+                    content=(raw_content := entry.get("content", {}).get("label", "")),
+                    rating=rating,
+                    version=entry.get("im:version", {}).get("label", ""),
+                    updated=entry.get("updated", {}).get("label", ""),
+                    cleaned_content=clean_review_text(raw_content),
+                ))
+            except ValidationError:
+                continue
 
     return reviews[:limit]
 
 
 if __name__ == "__main__":
-    app_reviews = fetch_reviews("547702041")
-    print(app_reviews, len(app_reviews))
+    app_reviews = fetch_reviews("547702041", limit=10)
+    for r in app_reviews[:10]:
+        print(r.rating, r.title)
+        print("  raw:    ", r.content[:80])
+        print("  cleaned:", r.cleaned_content[:80])
