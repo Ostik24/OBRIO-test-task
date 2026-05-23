@@ -86,7 +86,7 @@ def compute_insights(reviews: list[Review]) -> dict:
     from app.services.embeddings import classify_review_themes
     semantic_themes = classify_review_themes(reviews)
     bigrams = top_bigrams(reviews, n=15)
-    
+
     try:
         from app.services.recommendations import generate_llm_recommendations
         recs = generate_llm_recommendations(semantic_themes, bigrams)
@@ -95,7 +95,7 @@ def compute_insights(reviews: list[Review]) -> dict:
     except Exception as e:
         print(f"[warn] LLM recommendations failed, using templated fallback: {e}")
         recs = generate_recommendations(reviews)
-    
+
     return {
         "negative_keywords": top_keywords(reviews, n=15),
         "negative_bigrams":  bigrams,
