@@ -1,0 +1,162 @@
+import requests
+import streamlit as st
+import plotly.express as px
+import pandas as pd
+
+API_BASE = "http://localhost:8000"
+
+st.set_page_config(
+    page_title="Apple Store Review Analyzer",
+    page_icon="🍎",
+    layout="wide",
+)
+
+st.title("Apple Store Review Analyzer")
+
+with st.form("collect_form"):
+    cols = st.columns([2, 1, 1, 1])
+    app_id = cols[0].text_input("App ID", value="547702041", help="Numeric Apple app ID (Tinder: 547702041, Duolingo: 570060128)")
+    country = cols[1].text_input("Country", value="us", max_chars=2)
+    limit = cols[2].number_input("Limit", min_value=1, max_value=500, value=100)
+    submitted = cols[3].form_submit_button("Analyze", use_container_width=True, type="primary")
+
+
+def fetch_data(app_id: str, country: str, limit: int) -> dict | None:
+    try:
+        with st.spinner(f"Fetching reviews for app {app_id}..."):
+            r = requests.post(
+                f"{API_BASE}/reviews/collect",
+                json={"app_id": app_id, "country": country, "limit": limit},
+                timeout=60,
+            )
+        if r.status_code != 200:
+            st.error(f"Collect failed: {r.json().get('detail', r.text)}")
+            return None
+
+        with st.spinner("Computing metrics..."):
+            metrics = requests.get(f"{API_BASE}/reviews/{app_id}/metrics").json()
+
+        with st.spinner("Running NLP pipeline (this takes ~15 sec)..."):
+            insights = requests.get(f"{API_BASE}/reviews/{app_id}/insights").json()
+
+        raw = requests.get(f"{API_BASE}/reviews/{app_id}/raw").json()
+        return {"collect": r.json(), "metrics": metrics, "insights": insights, "raw": raw}
+
+    except requests.exceptions.ConnectionError:
+        st.error(f"Could not connect to API at {API_BASE}. Is it running?\n\nRun: `python -m uvicorn app.api.main:app`")
+        return None
+    except Exception as e:
+        st.error(f"Unexpected error: {e}")
+        return None
+
+if submitted:
+    st.session_state["data"] = fetch_data(app_id, country, limit)
+
+data = st.session_state.get("data")
+
+if data is None:
+    st.info("Enter an app ID and click Analyze to get started.")
+    st.stop()
+
+metrics = data["metrics"]
+insights = data["insights"]
+raw = data["raw"]
+
+st.divider()
+st.header("Metrics")
+
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Total reviews", metrics["total_reviews"])
+c2.metric("Average rating", f"⭐ {metrics['average_rating']}")
+c3.metric("% Negative", f"{metrics['sentiment_distribution']['negative']['percent']}%")
+c4.metric("% Positive", f"{metrics['sentiment_distribution']['positive']['percent']}%")
+
+c1, c2 = st.columns(2)
+
+with c1:
+    st.subheader("Rating distribution")
+    rating_df = pd.DataFrame([
+        {"stars": f"{s}⭐", "count": metrics["rating_distribution"][str(s)]["count"]}
+        for s in range(1, 6)
+    ])
+    fig = px.bar(rating_df, x="stars", y="count", color="count", color_continuous_scale="RdYlGn")
+    fig.update_layout(showlegend=False, coloraxis_showscale=False, height=350)
+    st.plotly_chart(fig, use_container_width=True)
+
+with c2:
+    st.subheader("Sentiment distribution")
+    sent_df = pd.DataFrame([
+        {"sentiment": s.title(), "count": metrics["sentiment_distribution"][s]["count"]}
+        for s in ["positive", "neutral", "negative"]
+    ])
+    fig = px.pie(sent_df, values="count", names="sentiment",
+                 color="sentiment",
+                 color_discrete_map={"Positive": "#22c55e", "Neutral": "#9ca3af", "Negative": "#ef4444"})
+    fig.update_layout(height=350)
+    st.plotly_chart(fig, use_container_width=True)
+
+st.divider()
+st.header("Themes (semantic, via sentence embeddings)")
+
+themes_data = insights.get("themes_semantic", {})
+if themes_data:
+    theme_df = pd.DataFrame([
+        {"theme": t.title(), "count": d["count"]}
+        for t, d in sorted(themes_data.items(), key=lambda x: -x[1]["count"])
+    ])
+    fig = px.bar(theme_df, y="theme", x="count", orientation="h", color="count", color_continuous_scale="Reds")
+    fig.update_layout(showlegend=False, coloraxis_showscale=False, height=300, yaxis={"categoryorder": "total ascending"})
+    st.plotly_chart(fig, use_container_width=True)
+
+    for theme, d in sorted(themes_data.items(), key=lambda x: -x[1]["count"]):
+        with st.expander(f"**{theme.title()}** — {d['count']} reviews"):
+            for ex in d["examples"][:3]:
+                st.markdown(f"> *{ex['review']}*")
+                st.caption(f"cosine similarity: {ex['score']}")
+
+st.divider()
+st.header("Top complaints")
+
+c1, c2 = st.columns(2)
+
+with c1:
+    st.subheader("Keywords (TF-IDF)")
+    kw_df = pd.DataFrame(insights["negative_keywords"][:10], columns=["word", "score"])
+    st.dataframe(kw_df, use_container_width=True, hide_index=True)
+
+with c2:
+    st.subheader("Phrases (bigrams)")
+    bg_df = pd.DataFrame(insights["negative_bigrams"][:10], columns=["phrase", "count"])
+    st.dataframe(bg_df, use_container_width=True, hide_index=True)
+
+st.divider()
+st.header("Actionable recommendations")
+st.caption("Generated by Claude Haiku from theme + bigram data")
+
+for rec in insights.get("recommendations", []):
+    st.markdown(f"- {rec}")
+
+st.divider()
+st.header("Raw reviews")
+
+raw_df = pd.DataFrame(raw)
+st.dataframe(
+    raw_df[["rating", "sentiment", "title", "author", "content"]],
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "content": st.column_config.TextColumn(width="large"),
+        "rating": st.column_config.NumberColumn(width="small"),
+    },
+)
+
+csv = raw_df.to_csv(index=False).encode("utf-8")
+st.download_button(
+    "Download as CSV",
+    csv,
+    file_name=f"reviews_{app_id}.csv",
+    mime="text/csv",
+)
+
+st.divider()
+st.caption(f"Powered by FastAPI + sentence-transformers + Claude Haiku · API: {API_BASE}")
