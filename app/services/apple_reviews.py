@@ -17,7 +17,7 @@ def fetch_reviews(app_id: str, country: str = "us", limit: int = 100) -> list[Re
     if not app_id.isdigit():
         raise ValueError("ID of the app must be numeric")
     if len(country) != 2 or not country.isalpha():
-        raise ValueError("country must has 2 letters code")
+        raise ValueError("country must have a 2-letter code")
     if limit <= 0:
         raise ValueError("limit must be greater than 0")
 
